@@ -1,0 +1,34 @@
+# ============================================
+# Vellare Doces — .gitignore
+# ============================================
+
+# ---------- Ambiente ----------
+.env
+!.env.example
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# ---------- Docker ----------
+docker-compose.override.yml
+*.log
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------- OS ----------
+desktop.ini

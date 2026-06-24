@@ -1,0 +1,73 @@
+# ============================================
+# Vellare Doces — Docker Compose
+# ============================================
+# Uso: docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+
+services:
+  # -------- PostgreSQL --------
+  db:
+    image: postgres:16-alpine
+    container_name: vellare-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - vellare_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vellare-network
+
+  # -------- FastAPI Backend --------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vellare-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      API_HOST: ${API_HOST}
+      API_PORT: ${API_PORT}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      ADMIN_KEY: ${ADMIN_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - vellare-network
+
+  # -------- Nginx Frontend --------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vellare-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - vellare-network
+
+# -------- Volumes Nomeados --------
+volumes:
+  vellare_pgdata:
+    name: vellare_pgdata
+
+# -------- Rede --------
+networks:
+  vellare-network:
+    name: vellare-network
+    driver: bridge
