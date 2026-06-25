@@ -5,13 +5,8 @@
  */
 
 const API = (() => {
-    // Em dev local, o Nginx faz proxy reverso /api -> api:8000
-    // Em produção, altere para a URL do backend no Render/Railway
     const BASE_URL = '';
 
-    /**
-     * Fetch genérico com tratamento de erros.
-     */
     async function request(endpoint, options = {}) {
         const url = `${BASE_URL}${endpoint}`;
         const config = {
@@ -27,10 +22,18 @@ const API = (() => {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || `Erro ${response.status}`);
+
+                // Tratamento especial para os erros em formato de lista do FastAPI
+                let errorMsg = errorData.detail;
+                if (Array.isArray(errorMsg)) {
+                    errorMsg = errorMsg.map(e => e.msg).join(' | ');
+                } else if (typeof errorMsg === 'object') {
+                    errorMsg = JSON.stringify(errorMsg);
+                }
+
+                throw new Error(errorMsg || `Erro no servidor (${response.status})`);
             }
 
-            // Para respostas de download (PDF/CSV)
             const contentType = response.headers.get('Content-Type') || '';
             if (contentType.includes('application/pdf') || contentType.includes('text/csv')) {
                 return response.blob();
@@ -44,19 +47,10 @@ const API = (() => {
     }
 
     return {
-        /**
-         * Lista todos os produtos ativos.
-         * @returns {Promise<Array>} Lista de produtos
-         */
         getProducts() {
             return request('/api/products/');
         },
 
-        /**
-         * Cria um novo pedido.
-         * @param {Object} orderData - { customer_name, customer_phone, notes, items: [{ product_id, quantity }] }
-         * @returns {Promise<Object>} Pedido criado
-         */
         createOrder(orderData) {
             return request('/api/orders/', {
                 method: 'POST',
@@ -64,64 +58,51 @@ const API = (() => {
             });
         },
 
-        /**
-         * Consulta um pedido pelo ID.
-         * @param {number} orderId
-         * @returns {Promise<Object>} Pedido
-         */
         getOrder(orderId) {
             return request(`/api/orders/${orderId}`);
         },
 
-        /**
-         * Lista todos os pedidos (admin).
-         * @param {string} adminKey - Chave de autenticação
-         * @param {string|null} statusFilter - Filtro por status
-         * @returns {Promise<Object>} { orders, total_count }
-         */
-        getAdminOrders(adminKey, statusFilter = null) {
-            let endpoint = '/api/admin/orders';
-            if (statusFilter) {
-                endpoint += `?status_filter=${statusFilter}`;
-            }
-            return request(endpoint, {
+        getAdminOrders(adminKey, statusFilter = null, startDate = null, endDate = null) {
+            const params = new URLSearchParams();
+            if (statusFilter) params.append('status_filter', statusFilter);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            const queryString = params.toString() ? `?${params.toString()}` : '';
+            return request(`/api/admin/orders${queryString}`, {
                 headers: { 'X-Admin-Key': adminKey },
             });
         },
 
-        /**
-         * Atualiza o status de um pedido (admin).
-         * @param {number} orderId
-         * @param {string} status
-         * @param {string} adminKey
-         * @returns {Promise<Object>} Pedido atualizado
-         */
         updateOrderStatus(orderId, status, adminKey) {
             return request(`/api/admin/orders/${orderId}/status`, {
                 method: 'PATCH',
-                body: JSON.stringify({ status }),
+                headers: {
+                    'X-Admin-Key': adminKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ "status": status }),
+            });
+        },
+
+        exportPDF(adminKey, startDate = null, endDate = null) {
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            const queryString = params.toString() ? `?${params.toString()}` : '';
+            return request(`/api/admin/export/pdf${queryString}`, {
                 headers: { 'X-Admin-Key': adminKey },
             });
         },
 
-        /**
-         * Exporta pedidos em PDF (admin).
-         * @param {string} adminKey
-         * @returns {Promise<Blob>} PDF blob
-         */
-        exportPDF(adminKey) {
-            return request('/api/admin/export/pdf', {
-                headers: { 'X-Admin-Key': adminKey },
-            });
-        },
+        exportCSV(adminKey, startDate = null, endDate = null) {
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
 
-        /**
-         * Exporta pedidos em CSV (admin).
-         * @param {string} adminKey
-         * @returns {Promise<Blob>} CSV blob
-         */
-        exportCSV(adminKey) {
-            return request('/api/admin/export/csv', {
+            const queryString = params.toString() ? `?${params.toString()}` : '';
+            return request(`/api/admin/export/csv${queryString}`, {
                 headers: { 'X-Admin-Key': adminKey },
             });
         },

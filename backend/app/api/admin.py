@@ -5,8 +5,9 @@ Rotas protegidas para gerenciamento de pedidos.
 Autenticação via header X-Admin-Key.
 """
 
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -31,15 +32,33 @@ def verify_admin_key(x_admin_key: str = Header(..., alias="X-Admin-Key")):
     return True
 
 
+def apply_date_filters(query, start_date: date | None, end_date: date | None):
+    """
+    Aplica o filtro de data compensando o fuso horário (UTC-3 do Brasil).
+    O dia começa às 03:00:00 (UTC) e termina às 02:59:59 (UTC) do dia seguinte.
+    """
+    if start_date:
+        start_dt = datetime.combine(start_date, datetime.min.time()) + timedelta(hours=3)
+        query = query.filter(Order.created_at >= start_dt)
+    
+    if end_date:
+        end_dt = datetime.combine(end_date, datetime.max.time()) + timedelta(hours=3)
+        query = query.filter(Order.created_at <= end_dt)
+        
+    return query
+
+
 @router.get("/orders", response_model=OrderListOut)
 def list_orders(
     status_filter: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_admin_key),
 ):
     """
     Lista todos os pedidos (fila da doceira).
-    Filtro opcional por status.
+    Filtros opcionais por status e range de datas.
     """
     query = db.query(Order).options(
         joinedload(Order.items).joinedload(OrderItem.product)
@@ -47,6 +66,9 @@ def list_orders(
 
     if status_filter and status_filter in VALID_STATUSES:
         query = query.filter(Order.status == status_filter)
+
+    # Aplica o filtro de datas com fuso corrigido para o Brasil
+    query = apply_date_filters(query, start_date, end_date)
 
     orders = query.order_by(Order.created_at.desc()).all()
 
@@ -57,7 +79,6 @@ def list_orders(
     orders_out = []
     for order in unique_orders:
         from app.api.orders import _serialize_order
-
         orders_out.append(_serialize_order(order))
 
     return OrderListOut(orders=orders_out, total_count=len(orders_out))
@@ -95,24 +116,24 @@ def update_order_status(
     db.refresh(order)
 
     from app.api.orders import _serialize_order
-
     return _serialize_order(order)
 
 
 @router.get("/export/pdf")
 def export_orders_pdf(
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_admin_key),
 ):
-    """Exporta todos os pedidos em PDF."""
-    orders = (
-        db.query(Order)
-        .options(joinedload(Order.items).joinedload(OrderItem.product))
-        .order_by(Order.created_at.desc())
-        .all()
+    """Exporta pedidos em PDF com filtro de data."""
+    query = db.query(Order).options(
+        joinedload(Order.items).joinedload(OrderItem.product)
     )
 
-    # Deduplica
+    query = apply_date_filters(query, start_date, end_date)
+    orders = query.order_by(Order.created_at.desc()).all()
+
     unique_orders = list({o.id: o for o in orders}.values())
     unique_orders.sort(key=lambda o: o.created_at, reverse=True)
 
@@ -121,35 +142,32 @@ def export_orders_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": "attachment; filename=vellare_pedidos.pdf"
-        },
+        headers={"Content-Disposition": "attachment; filename=vellare_pedidos.pdf"},
     )
 
 
 @router.get("/export/csv")
 def export_orders_csv(
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_admin_key),
 ):
-    """Exporta todos os pedidos em CSV."""
-    orders = (
-        db.query(Order)
-        .options(joinedload(Order.items).joinedload(OrderItem.product))
-        .order_by(Order.created_at.desc())
-        .all()
+    """Exporta pedidos em CSV com filtro de data."""
+    query = db.query(Order).options(
+        joinedload(Order.items).joinedload(OrderItem.product)
     )
 
-    # Deduplica
+    query = apply_date_filters(query, start_date, end_date)
+    orders = query.order_by(Order.created_at.desc()).all()
+
     unique_orders = list({o.id: o for o in orders}.values())
     unique_orders.sort(key=lambda o: o.created_at, reverse=True)
 
     csv_content = generate_orders_csv(unique_orders)
 
     return Response(
-        content=csv_content.encode("utf-8-sig"),  # BOM para Excel BR
+        content=csv_content.encode("utf-8-sig"),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=vellare_pedidos.csv"
-        },
+        headers={"Content-Disposition": "attachment; filename=vellare_pedidos.csv"},
     )

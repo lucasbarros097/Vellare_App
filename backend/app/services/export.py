@@ -64,6 +64,15 @@ def generate_orders_pdf(orders: list[Order]) -> bytes:
         spaceAfter=8 * mm,
     )
 
+    # NOVO: Estilo específico para a célula de itens quebrar linha corretamente
+    item_style = ParagraphStyle(
+        "ItemStyle",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        alignment=0 # 0 = Esquerda
+    )
+
     elements = []
 
     # ── Header ──
@@ -89,12 +98,16 @@ def generate_orders_pdf(orders: list[Order]) -> bytes:
         items_str = ", ".join(
             f"{item.product.name} x{item.quantity}" for item in order.items
         )
+        
+        # NOVO: Transforma a string em Paragraph para ativar a quebra de linha (Word Wrap)
+        items_paragraph = Paragraph(items_str, item_style)
+
         data.append(
             [
                 str(order.id),
                 order.customer_name,
                 order.customer_phone,
-                items_str,
+                items_paragraph, # Usando o objeto Paragraph aqui
                 f"R$ {order.total:.2f}",
                 order.status.capitalize(),
                 order.created_at.strftime("%d/%m/%Y %H:%M"),

@@ -1,38 +1,31 @@
 /**
  * Vellare Doces — Admin Panel
  * ============================
- * Painel da doceira: login, fila de pedidos, exportações.
+ * Painel da doceira: login, fila de pedidos, exportações, métricas de produção.
  */
 
 const Admin = (() => {
     const ADMIN_KEY_STORAGE = 'vellare_admin_key';
 
-    /**
-     * Retorna a chave admin salva.
-     */
+    let _cachedOrders = [];
+    let _currentStatusFilter = null;
+    let _currentProductFilter = '';
+
     function getStoredKey() {
         return sessionStorage.getItem(ADMIN_KEY_STORAGE) || '';
     }
 
-    /**
-     * Salva a chave admin na session.
-     */
     function storeKey(key) {
         sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
     }
 
-    /**
-     * Formata valor em reais.
-     */
     function formatPrice(value) {
         return `R$ ${value.toFixed(2).replace('.', ',')}`;
     }
 
-    /**
-     * Formata data.
-     */
     function formatDate(dateStr) {
         const d = new Date(dateStr);
+        // Formatação nativa para o padrão Brasileiro (pt-BR)
         return d.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
@@ -42,36 +35,13 @@ const Admin = (() => {
         });
     }
 
-    /**
-     * Retorna o emoji do status.
-     */
-    function statusEmoji(status) {
-        const map = {
-            pendente: '🟠',
-            preparando: '🔵',
-            pronto: '🟢',
-            entregue: '✅',
-        };
-        return map[status] || '⚪';
-    }
-
     return {
-        /**
-         * Renderiza a página de login ou o painel admin.
-         */
         renderAdminPage() {
             const key = getStoredKey();
-
-            if (!key) {
-                return Admin.renderLogin();
-            }
-
+            if (!key) return Admin.renderLogin();
             return Admin.renderPanel();
         },
 
-        /**
-         * Tela de login simples.
-         */
         renderLogin() {
             return `
                 <section class="admin-section section page-content" style="padding-top: calc(var(--space-4xl) + 60px);">
@@ -79,17 +49,12 @@ const Admin = (() => {
                         <div class="admin-login-card animate-fade-in-up">
                             <div class="admin-login-icon">👩‍🍳</div>
                             <h2 class="admin-login-title">Área da Doceira</h2>
-                            <p class="admin-login-subtitle">
-                                Insira a chave de acesso para gerenciar seus pedidos.
-                            </p>
+                            <p class="admin-login-subtitle">Insira a chave de acesso para gerenciar seus pedidos.</p>
                             <form onsubmit="Admin.handleLogin(event)">
                                 <div class="form-group">
-                                    <input class="form-input" type="password" id="admin-key-input"
-                                        placeholder="Chave de acesso" required autocomplete="off">
+                                    <input class="form-input" type="password" id="admin-key-input" placeholder="Chave de acesso" required autocomplete="off">
                                 </div>
-                                <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">
-                                    🔓 Entrar
-                                </button>
+                                <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">🔓 Entrar</button>
                             </form>
                         </div>
                     </div>
@@ -97,31 +62,52 @@ const Admin = (() => {
             `;
         },
 
-        /**
-         * Painel com fila de pedidos (carregado dinamicamente).
-         */
         renderPanel() {
             return `
                 <section class="admin-section section page-content" style="padding-top: calc(var(--space-4xl) + 60px);">
                     <div class="container">
-                        <div class="admin-header">
+                        <div class="admin-header" style="flex-wrap: wrap; gap: var(--space-md);">
                             <div>
                                 <span class="section-label">✦ Painel Administrativo</span>
                                 <h2 class="section-title">Fila de Pedidos</h2>
                             </div>
-                            <div class="admin-actions">
+                            
+                            <div class="admin-actions" style="display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; width: 100%;">
+                                <!-- Botoes de Status -->
                                 <div class="menu-filters" style="margin: 0;">
                                     <button class="filter-btn active" data-status="all" onclick="Admin.filterByStatus(null)">Todos</button>
                                     <button class="filter-btn" data-status="pendente" onclick="Admin.filterByStatus('pendente')">🟠 Pendentes</button>
                                     <button class="filter-btn" data-status="preparando" onclick="Admin.filterByStatus('preparando')">🔵 Preparando</button>
                                     <button class="filter-btn" data-status="pronto" onclick="Admin.filterByStatus('pronto')">🟢 Prontos</button>
+                                    <button class="filter-btn" data-status="entregue" onclick="Admin.filterByStatus('entregue')">✅ Entregues</button>
                                 </div>
+                                
+                                <select id="product-filter" class="status-select" style="padding: 10px 16px; border-radius: var(--radius-md); border: 1px solid var(--color-cream-dark); background: white; font-family: inherit; color: var(--color-chocolate); cursor: pointer; font-weight: 500;" onchange="Admin.filterByProduct(this.value)">
+                                    <option value="">🍬 Todos os Sabores</option>
+                                </select>
+                            </div>
+
+                            <!-- Barra de Calendário e Extração -->
+                            <div class="admin-actions" style="display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; background: #faf6f0; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); margin-top: var(--space-sm);">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: var(--text-sm); font-weight: 600; color: var(--color-chocolate);">📅 Período:</span>
+                                    <input type="date" id="filter-start-date" class="form-input" style="padding: 6px 10px; max-width: 140px; font-size: 14px; border-color: var(--color-gold-light);">
+                                    <span style="color: var(--color-chocolate-light); font-size: 14px;">até</span>
+                                    <input type="date" id="filter-end-date" class="form-input" style="padding: 6px 10px; max-width: 140px; font-size: 14px; border-color: var(--color-gold-light);">
+                                    <button class="btn btn-sm" onclick="Admin.loadOrders(Admin.getCurrentStatus())" style="background: var(--color-gold); color: white; padding: 6px 12px;">🔍 Filtrar</button>
+                                </div>
+                                
+                                <div style="flex-grow: 1;"></div>
+                                
                                 <button class="btn btn-secondary btn-sm" onclick="Admin.handleExport('pdf')">📄 PDF</button>
                                 <button class="btn btn-secondary btn-sm" onclick="Admin.handleExport('csv')">📊 CSV</button>
-                                <button class="btn btn-sm" onclick="Admin.loadOrders()" style="background: var(--color-cream); color: var(--color-chocolate);">🔄 Atualizar</button>
+                                <button class="btn btn-sm" onclick="Admin.loadOrders(Admin.getCurrentStatus())" style="background: var(--color-cream); color: var(--color-chocolate);">🔄 Atualizar</button>
                                 <button class="btn btn-sm" onclick="Admin.logout()" style="background: #ffeae6; color: var(--color-error);">🚪 Sair</button>
                             </div>
                         </div>
+
+                        <div id="production-summary-container" style="margin-bottom: var(--space-xl);"></div>
+
                         <div id="orders-container">
                             <div style="text-align: center; padding: var(--space-2xl); color: var(--color-chocolate-light);">
                                 <div class="spinner" style="margin: 0 auto var(--space-md);"></div>
@@ -133,15 +119,62 @@ const Admin = (() => {
             `;
         },
 
-        /**
-         * Renderiza a tabela de pedidos.
-         */
+        renderProductionSummary(orders) {
+            const totals = {};
+            orders.forEach(order => {
+                if (order.status === 'entregue' || order.status === 'cancelado') {
+                    return;
+                }
+                order.items.forEach(item => {
+                    const name = item.product_name || 'Produto';
+                    totals[name] = (totals[name] || 0) + item.quantity;
+                });
+            });
+
+            const productNames = Object.keys(totals);
+            if (productNames.length === 0) {
+                return `
+                    <div style="background: #faf6f0; border-radius: var(--radius-lg); padding: var(--space-md); border: 1px dashed var(--color-cream-dark); text-align: center; color: var(--color-chocolate-light); font-size: var(--text-sm);">
+                        Nenhuma trufa pendente para produção neste filtro.
+                    </div>
+                `;
+            }
+
+            const emojis = {
+                'leite condensado': '🍬', 'doce de leite': '🍮', 'coco': '🥥',
+                'limão': '🍋', 'cacau': '🍫', 'chocolate': '🍫',
+                'geléia de morango': '🍓', 'ganache com conhaque': '🥃'
+            };
+
+            const cards = productNames.map(name => {
+                const emoji = emojis[name.toLowerCase().trim()] || '🍬';
+                return `
+                    <div class="production-card" style="background: white; border: 1px solid var(--color-cream-dark); border-radius: var(--radius-md); padding: var(--space-md); display: flex; align-items: center; gap: var(--space-md); box-shadow: 0 2px 4px rgba(0,0,0,0.01);">
+                        <div style="font-size: 2rem;">${emoji}</div>
+                        <div>
+                            <div style="font-size: var(--text-xs); color: var(--color-chocolate-light); font-weight: 600; text-transform: capitalize;">${name}</div>
+                            <div style="font-size: var(--text-lg); font-weight: 700; color: var(--color-chocolate);">${totals[name]} <span style="font-size: var(--text-xs); font-weight: 400; color: var(--color-chocolate-light);">unidades</span></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div style="background: #faf6f0; border-radius: var(--radius-lg); padding: var(--space-lg); border: 1px dashed var(--color-gold);">
+                    <h3 style="font-size: var(--text-sm); margin-bottom: var(--space-md); color: var(--color-chocolate); display: flex; align-items: center; gap: var(--space-xs);">👨‍🍳 Necessidade de Produção Atual</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-md);">
+                        ${cards}
+                    </div>
+                </div>
+            `;
+        },
+
         renderOrdersTable(orders) {
             if (orders.length === 0) {
                 return `
                     <div style="text-align: center; padding: var(--space-3xl); color: var(--color-chocolate-light);">
                         <div style="font-size: 3rem; margin-bottom: var(--space-md);">📭</div>
-                        <p>Nenhum pedido encontrado.</p>
+                        <p>Nenhum pedido encontrado para este filtro.</p>
                     </div>
                 `;
             }
@@ -156,7 +189,7 @@ const Admin = (() => {
                         <td><strong>#${order.id}</strong></td>
                         <td>${order.customer_name}</td>
                         <td>${order.customer_phone}</td>
-                        <td style="max-width: 200px;">${itemsList}</td>
+                        <td style="max-width: 250px; font-weight: 500;">${itemsList}</td>
                         <td><strong>${formatPrice(order.total)}</strong></td>
                         <td>
                             <select class="status-select" onchange="Admin.changeStatus(${order.id}, this.value)">
@@ -191,55 +224,48 @@ const Admin = (() => {
                     </table>
                 </div>
                 <div style="text-align: center; margin-top: var(--space-lg); color: var(--color-chocolate-light); font-size: var(--text-sm);">
-                    ${orders.length} pedido(s) encontrado(s)
+                    ${orders.length} pedido(s) listado(s)
                 </div>
             `;
         },
 
-        // ══════════════════════════════════
-        // EVENT HANDLERS
-        // ══════════════════════════════════
-
-        /**
-         * Login do admin.
-         */
-        async handleLogin(event) {
-            event.preventDefault();
-            const key = document.getElementById('admin-key-input').value;
-
-            try {
-                // Testa a chave fazendo uma request
-                await API.getAdminOrders(key);
-                storeKey(key);
-                App.navigate('admin');
-                App.showToast('Bem-vinda ao painel! 👩‍🍳', 'success');
-            } catch (error) {
-                App.showToast('Chave de acesso inválida.', 'error');
-            }
-        },
-
-        /**
-         * Logout do admin.
-         */
-        logout() {
-            sessionStorage.removeItem(ADMIN_KEY_STORAGE);
-            App.navigate('admin');
-        },
-
-        /**
-         * Carrega pedidos da API.
-         */
         async loadOrders(statusFilter = null) {
+            _currentStatusFilter = statusFilter;
             const key = getStoredKey();
             const container = document.getElementById('orders-container');
+
+            const startDateEl = document.getElementById('filter-start-date');
+            const endDateEl = document.getElementById('filter-end-date');
+            const startDate = startDateEl ? startDateEl.value : null;
+            const endDate = endDateEl ? endDateEl.value : null;
+
+            // 🛑 TRAVA: Verificação de Data Futura
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const checkFutureDate = (dateStr) => {
+                if (!dateStr) return false;
+                const [year, month, day] = dateStr.split('-');
+                const selectedDate = new Date(year, month - 1, day);
+                return selectedDate > today;
+            };
+
+            if (checkFutureDate(startDate) || checkFutureDate(endDate)) {
+                App.showToast('Erro: Você não pode filtrar dias no futuro.', 'error');
+                return;
+            }
+            // ============================================
 
             if (!container) return;
 
             try {
-                const data = await API.getAdminOrders(key, statusFilter);
-                container.innerHTML = Admin.renderOrdersTable(data.orders);
+                const data = await API.getAdminOrders(key, statusFilter, startDate, endDate);
+                _cachedOrders = data.orders;
+
+                Admin.updateProductDropdownOptions();
+                Admin.applyFiltersAndRender();
             } catch (error) {
-                if (error.message.includes('403')) {
+                if (error.message && error.message.includes('403')) {
                     Admin.logout();
                     App.showToast('Sessão expirada. Faça login novamente.', 'warning');
                 } else {
@@ -252,11 +278,47 @@ const Admin = (() => {
             }
         },
 
-        /**
-         * Filtrar pedidos por status.
-         */
+        updateProductDropdownOptions() {
+            const select = document.getElementById('product-filter');
+            if (!select) return;
+
+            const productsSet = new Set();
+            _cachedOrders.forEach(order => {
+                order.items.forEach(item => {
+                    if (item.product_name) productsSet.add(item.product_name);
+                });
+            });
+
+            select.innerHTML = '<option value="">🍬 Todos os Sabores</option>';
+            Array.from(productsSet).sort().forEach(prod => {
+                const selected = _currentProductFilter === prod ? 'selected' : '';
+                select.innerHTML += `<option value="${prod}" ${selected}>${prod}</option>`;
+            });
+        },
+
+        applyFiltersAndRender() {
+            const container = document.getElementById('orders-container');
+            const summaryContainer = document.getElementById('production-summary-container');
+            if (!container) return;
+
+            if (summaryContainer) {
+                summaryContainer.innerHTML = Admin.renderProductionSummary(_cachedOrders);
+            }
+
+            let filteredOrders = _cachedOrders;
+            if (_currentProductFilter) {
+                filteredOrders = _cachedOrders.filter(order =>
+                    order.items.some(item => item.product_name === _currentProductFilter)
+                );
+            }
+
+            container.innerHTML = Admin.renderOrdersTable(filteredOrders);
+        },
+
         filterByStatus(status) {
-            // Atualiza botões
+            _currentProductFilter = '';
+            _currentStatusFilter = status;
+
             document.querySelectorAll('.admin-actions .filter-btn').forEach(btn => {
                 const btnStatus = btn.dataset.status;
                 btn.classList.toggle('active',
@@ -268,26 +330,55 @@ const Admin = (() => {
             Admin.loadOrders(status);
         },
 
-        /**
-         * Altera status de um pedido.
-         */
+        filterByProduct(productName) {
+            _currentProductFilter = productName;
+            Admin.applyFiltersAndRender();
+        },
+
+        getCurrentStatus() {
+            return _currentStatusFilter;
+        },
+
+        async handleLogin(event) {
+            event.preventDefault();
+            const key = document.getElementById('admin-key-input').value;
+
+            try {
+                await API.getAdminOrders(key);
+                storeKey(key);
+                App.navigate('admin');
+                App.showToast('Bem-vinda ao painel! 👩‍🍳', 'success');
+            } catch (error) {
+                App.showToast('Chave de acesso inválida.', 'error');
+            }
+        },
+
+        logout() {
+            sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+            App.navigate('admin');
+        },
+
         async changeStatus(orderId, newStatus) {
             const key = getStoredKey();
 
             try {
                 await API.updateOrderStatus(orderId, newStatus, key);
-                App.showToast(`Pedido #${orderId} → ${newStatus}`, 'success');
+                App.showToast(`Pedido #${orderId} atualizado para ${newStatus}`, 'success');
+                Admin.loadOrders(_currentStatusFilter);
             } catch (error) {
-                App.showToast(`Erro: ${error.message}`, 'error');
-                Admin.loadOrders(); // Recarrega para resetar
+                console.error("Erro detalhado ao mudar status:", error);
+                App.showToast(`Falha: ${error.message}`, 'error');
+                Admin.loadOrders(_currentStatusFilter);
             }
         },
 
-        /**
-         * Exporta relatório (PDF ou CSV).
-         */
         async handleExport(format) {
             const key = getStoredKey();
+
+            const startDateEl = document.getElementById('filter-start-date');
+            const endDateEl = document.getElementById('filter-end-date');
+            const startDate = startDateEl ? startDateEl.value : null;
+            const endDate = endDateEl ? endDateEl.value : null;
 
             try {
                 App.showToast(`Gerando ${format.toUpperCase()}...`, 'info');
@@ -296,14 +387,13 @@ const Admin = (() => {
                 let filename;
 
                 if (format === 'pdf') {
-                    blob = await API.exportPDF(key);
+                    blob = await API.exportPDF(key, startDate, endDate);
                     filename = 'vellare_pedidos.pdf';
                 } else {
-                    blob = await API.exportCSV(key);
+                    blob = await API.exportCSV(key, startDate, endDate);
                     filename = 'vellare_pedidos.csv';
                 }
 
-                // Trigger download
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -315,7 +405,7 @@ const Admin = (() => {
 
                 App.showToast(`${format.toUpperCase()} exportado com sucesso!`, 'success');
             } catch (error) {
-                App.showToast(`Erro ao exportar: ${error.message}`, 'error');
+                App.showToast(`Erro ao exportar: ${error.message || 'Falha na geração do arquivo'}`, 'error');
             }
         },
     };

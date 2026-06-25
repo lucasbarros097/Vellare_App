@@ -9,23 +9,23 @@ const Components = (() => {
     // ── Imagens placeholder por sabor ──
     const TRUFA_COLORS = {
         'leite condensado': 'linear-gradient(135deg, #F5E6D3 0%, #E8D5C0 100%)',
-        'doce de leite':    'linear-gradient(135deg, #D4A574 0%, #C49060 100%)',
-        'coco':             'linear-gradient(135deg, #FAFAFA 0%, #E8E4DC 100%)',
-        'limão':            'linear-gradient(135deg, #F0F4C3 0%, #DCE775 100%)',
-        'cacau':            'linear-gradient(135deg, #5D4037 0%, #4E342E 100%)',
-        'chocolate':        'linear-gradient(135deg, #6D4C41 0%, #5D4037 100%)',
-        'geléia de morango':'linear-gradient(135deg, #EF9A9A 0%, #E57373 100%)',
+        'doce de leite': 'linear-gradient(135deg, #D4A574 0%, #C49060 100%)',
+        'coco': 'linear-gradient(135deg, #FAFAFA 0%, #E8E4DC 100%)',
+        'limão': 'linear-gradient(135deg, #F0F4C3 0%, #DCE775 100%)',
+        'cacau': 'linear-gradient(135deg, #5D4037 0%, #4E342E 100%)',
+        'chocolate': 'linear-gradient(135deg, #6D4C41 0%, #5D4037 100%)',
+        'geléia de morango': 'linear-gradient(135deg, #EF9A9A 0%, #E57373 100%)',
         'ganache com conhaque': 'linear-gradient(135deg, #4E342E 0%, #3E2723 100%)',
     };
 
     const TRUFA_EMOJIS = {
         'leite condensado': '🍬',
-        'doce de leite':    '🍮',
-        'coco':             '🥥',
-        'limão':            '🍋',
-        'cacau':            '🍫',
-        'chocolate':        '🍫',
-        'geléia de morango':'🍓',
+        'doce de leite': '🍮',
+        'coco': '🥥',
+        'limão': '🍋',
+        'cacau': '🍫',
+        'chocolate': '🍫',
+        'geléia de morango': '🍓',
         'ganache com conhaque': '🥃',
     };
 
